@@ -1,13 +1,14 @@
 import { config } from "../config.js";
 
-const baseUrl = () =>
-  `https://graph.facebook.com/${config.whatsapp.graphApiVersion}/${config.whatsapp.phoneNumberId}/messages`;
+function urlFor(channel) {
+  return `https://graph.facebook.com/${config.graphApiVersion}/${channel.phoneNumberId}/messages`;
+}
 
-async function post(body) {
-  const res = await fetch(baseUrl(), {
+async function post(channel, body) {
+  const res = await fetch(urlFor(channel), {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${config.whatsapp.token}`,
+      Authorization: `Bearer ${channel.token}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
@@ -22,8 +23,9 @@ async function post(body) {
 }
 
 // Responder dentro de la ventana de 24h desde el último mensaje del cliente.
-export function sendTextMessage(to, text) {
-  return post({
+// `channel` es config.collectionsWhatsapp o config.communityWhatsapp.
+export function sendTextMessage(channel, to, text) {
+  return post(channel, {
     messaging_product: "whatsapp",
     to,
     type: "text",
@@ -33,8 +35,8 @@ export function sendTextMessage(to, text) {
 
 // Iniciar conversación fuera de la ventana de 24h: requiere una plantilla
 // previamente aprobada en Meta Business Manager (WhatsApp Manager > Message Templates).
-export function sendTemplateMessage(to, templateName, languageCode, params = []) {
-  return post({
+export function sendTemplateMessage(channel, to, templateName, languageCode, params = []) {
+  return post(channel, {
     messaging_product: "whatsapp",
     to,
     type: "template",

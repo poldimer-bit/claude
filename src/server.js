@@ -1,42 +1,63 @@
 import express from "express";
 import { config } from "./config.js";
-import { handleIncomingMessage } from "./router.js";
+import { handleCollectionsMessage, handleCommunityMessage } from "./router.js";
 import { startCollectionsScheduler } from "./scheduler/reminders.js";
 
 const app = express();
 app.use(express.json());
 
-// Verificación del webhook (Meta hace un GET al configurar la URL en el panel de la app).
-app.get("/webhook", (req, res) => {
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
+function verifyHandler(verifyToken) {
+  return (req, res) => {
+    const mode = req.query["hub.mode"];
+    const token = req.query["hub.verify_token"];
+    const challenge = req.query["hub.challenge"];
 
-  if (mode === "subscribe" && token === config.whatsapp.verifyToken) {
-    res.status(200).send(challenge);
-  } else {
-    res.sendStatus(403);
+    if (mode === "subscribe" && token === verifyToken) {
+      res.status(200).send(challenge);
+    } else {
+      res.sendStatus(403);
+    }
+  };
+}
+
+function extractMessage(body) {
+  const entry = body?.entry?.[0];
+  const change = entry?.changes?.[0];
+  const message = change?.value?.messages?.[0];
+  if (!message || message.type !== "text") return null;
+
+  return {
+    from: message.from,
+    text: message.text.body,
+    senderName: change?.value?.contacts?.[0]?.profile?.name,
+  };
+}
+
+// --- Agente de cobranza (número exclusivo) ---
+app.get("/webhook/collections", verifyHandler(config.collectionsWhatsapp.verifyToken));
+app.post("/webhook/collections", async (req, res) => {
+  res.sendStatus(200);
+  try {
+    const message = extractMessage(req.body);
+    if (!message) return;
+    const reply = await handleCollectionsMessage(message);
+    console.log(`[cobranza] ${message.from} -> "${message.text}" | respuesta: "${reply}"`);
+  } catch (err) {
+    console.error("[cobranza] error procesando mensaje:", err);
   }
 });
 
-// Mensajes entrantes de WhatsApp.
-app.post("/webhook", async (req, res) => {
-  res.sendStatus(200); // responder rápido, Meta reintenta si tardas
-
+// --- Agente de community manager (número dedicado, 1:1) ---
+app.get("/webhook/community", verifyHandler(config.communityWhatsapp.verifyToken));
+app.post("/webhook/community", async (req, res) => {
+  res.sendStatus(200);
   try {
-    const entry = req.body?.entry?.[0];
-    const change = entry?.changes?.[0];
-    const message = change?.value?.messages?.[0];
-    if (!message || message.type !== "text") return;
-
-    const from = message.from;
-    const text = message.text.body;
-    const senderName = change?.value?.contacts?.[0]?.profile?.name;
-
-    const reply = await handleIncomingMessage({ from, text, senderName });
-    console.log(`[whatsapp] ${from} -> "${text}" | respuesta: "${reply}"`);
+    const message = extractMessage(req.body);
+    if (!message) return;
+    const reply = await handleCommunityMessage(message);
+    console.log(`[community] ${message.from} -> "${message.text}" | respuesta: "${reply}"`);
   } catch (err) {
-    console.error("[webhook] error procesando mensaje:", err);
+    console.error("[community] error procesando mensaje:", err);
   }
 });
 

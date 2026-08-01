@@ -1,26 +1,30 @@
 # Agentes de WhatsApp — LOCO4EVER
 
-Dos agentes sobre el mismo webhook de WhatsApp:
+Dos agentes independientes, cada uno con su propio número de WhatsApp:
 
-- **Cobranza**: le escribe a clientes con facturas vencidas (recordatorio suave → firme → aviso final según días de atraso) y responde cuando el cliente contesta.
-- **Community manager**: responde consultas generales de clientes/prospectos con la voz de marca de LOCO4EVER.
+- **Cobranza** (`/webhook/collections`): número exclusivo. Le escribe a clientes con facturas vencidas (recordatorio suave → firme → aviso final según días de atraso) y responde cuando el cliente contesta.
+- **Community manager** (`/webhook/community`): número separado, distinto al de cobranza. Responde consultas generales de clientes/prospectos con la voz de marca de LOCO4EVER.
 
-## Cómo decide a quién le habla cada mensaje
+## Sobre los grupos de WhatsApp existentes
 
-`src/router.js`: si el número que escribe tiene una factura `overdue` en `data/clients.json`, responde el agente de cobranza; si no, responde el community manager.
+La API oficial de WhatsApp (Meta Cloud API) **no soporta grupos**: no puede unirse a un grupo, ni leer ni escribir en uno. Por eso el community manager de este MVP responde por **chat individual (1:1)** con cada cliente/prospecto, no dentro de los grupos que ya tienes. Los grupos existentes siguen siendo 100% manuales.
+
+Si más adelante quieres que el agente opere directo dentro de esos grupos, existe la opción de usar una librería no oficial (Baileys/whatsapp-web.js) que se conecta como un WhatsApp normal vía QR y sí soporta grupos — pero viola los Términos de Servicio de WhatsApp y hay riesgo real de que Meta banee ese número. Es una decisión de negocio, no técnica: si la quieres, se agrega como fase 2, idealmente con un número secundario (no el principal de la agencia) para acotar el riesgo.
 
 ## Setup
 
-### 1. WhatsApp Cloud API (Meta)
+### 1. Dos números en WhatsApp Business
 
-1. Crea una app en [developers.facebook.com/apps](https://developers.facebook.com/apps) tipo "Business".
-2. Agrega el producto "WhatsApp".
-3. Del panel de WhatsApp > API Setup, copia `Phone number ID` y el token temporal (o genera uno permanente en Business Settings > System Users).
-4. En "Configuration" del producto WhatsApp, configura el webhook:
-   - URL: `https://tu-dominio/webhook`
-   - Verify token: cualquier string que tú inventes (ponlo también en `.env` como `WHATSAPP_VERIFY_TOKEN`)
-   - Suscríbete al campo `messages`.
-5. Para que el agente de cobranza pueda **iniciar** conversaciones (recordatorios proactivos), crea y aprueba una plantilla en WhatsApp Manager > Message Templates (categoría "Utility"), y pon su nombre en `WHATSAPP_COLLECTIONS_TEMPLATE_NAME`. Sin plantilla aprobada, WhatsApp no te deja escribirle primero a un cliente fuera de la ventana de 24h.
+Necesitas **dos** números de teléfono distintos dados de alta en WhatsApp Business (pueden estar bajo la misma cuenta de Meta Business y la misma app, o en apps separadas):
+
+1. Crea (o usa) una app en [developers.facebook.com/apps](https://developers.facebook.com/apps) tipo "Business", con el producto "WhatsApp".
+2. Agrega los dos números de teléfono en la sección de WhatsApp (uno para cobranza, otro para community manager). Cada uno tiene su propio `Phone number ID`.
+3. Genera un token permanente por número en Business Settings > System Users (o usa el temporal para pruebas).
+4. En "Configuration" del producto WhatsApp, configura **un webhook por número**:
+   - Cobranza → `https://tu-dominio/webhook/collections`, verify token = el que pongas en `COLLECTIONS_WHATSAPP_VERIFY_TOKEN`
+   - Community → `https://tu-dominio/webhook/community`, verify token = el que pongas en `COMMUNITY_WHATSAPP_VERIFY_TOKEN`
+   - Ambos suscritos al campo `messages`.
+5. Para que el agente de cobranza pueda **iniciar** conversaciones (recordatorios proactivos), crea y aprueba una plantilla en WhatsApp Manager > Message Templates (categoría "Utility") para el número de cobranza, y pon su nombre en `COLLECTIONS_WHATSAPP_TEMPLATE_NAME`. Sin plantilla aprobada, WhatsApp no te deja escribirle primero a un cliente fuera de la ventana de 24h.
 
 ### 2. Variables de entorno
 
@@ -28,7 +32,7 @@ Dos agentes sobre el mismo webhook de WhatsApp:
 cp .env.example .env
 ```
 
-Rellena `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN`, `ANTHROPIC_API_KEY`.
+Rellena los tokens/IDs de ambos números y `ANTHROPIC_API_KEY`.
 
 ### 3. Instalar y correr
 
@@ -38,8 +42,8 @@ npm run dev
 ```
 
 El servidor expone:
-- `GET /webhook` — verificación de Meta
-- `POST /webhook` — mensajes entrantes
+- `GET/POST /webhook/collections` — agente de cobranza
+- `GET/POST /webhook/community` — agente de community manager
 - `GET /health` — healthcheck
 
 Para desarrollo local, expón el puerto con algo como `ngrok http 3000` y usa esa URL en el paso 4 de arriba.
@@ -63,12 +67,12 @@ Cuando tengas definido dónde quieres llevar esto de verdad (Sheets, Notion, tu 
 
 ### 5. Recordatorios automáticos
 
-`src/scheduler/reminders.js` corre con el cron definido en `COLLECTIONS_CRON` (por defecto todos los días 9am) y le manda la plantilla aprobada a cada cliente con factura `overdue`.
+`src/scheduler/reminders.js` corre con el cron definido en `COLLECTIONS_CRON` (por defecto todos los días 9am) y le manda la plantilla aprobada, desde el número de cobranza, a cada cliente con factura `overdue`.
 
 ## Pendientes / a definir contigo
 
 - Ajustar el tono y las reglas de escalamiento reales en `src/agents/collectionsAgent.js`.
 - Rellenar la voz de marca, servicios y FAQs reales en `src/agents/communityManagerAgent.js`.
 - Decidir el store definitivo de clientes/facturas.
-- Decidir si el community manager también cubre Instagram/Facebook (hoy solo WhatsApp).
-- Deploy: cualquier VPS/Render/Railway/Fly.io sirve, solo necesita URL pública para el webhook.
+- Decidir si en algún momento quieres la fase 2 con Baileys para operar dentro de los grupos existentes (con el riesgo de ban que implica).
+- Deploy: cualquier VPS/Render/Railway/Fly.io sirve, solo necesita URL pública para los dos webhooks.
