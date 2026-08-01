@@ -1,0 +1,17 @@
+[
+  {
+    "id": "client-001",
+    "name": "Cliente de ejemplo",
+    "phone": "521XXXXXXXXXX",
+    "invoices": [
+      {
+        "id": "inv-001",
+        "amount": 15000,
+        "currency": "MXN",
+        "dueDate": "2026-07-28",
+        "status": "overdue",
+        "description": "Servicio de gestión de redes - julio"
+      }
+    ]
+  }
+]
